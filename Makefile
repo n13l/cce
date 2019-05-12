@@ -1,7 +1,7 @@
 include build/options.mk
 include build/rules.mk
 
-LDFLAGS=-lurcu -lpthread -ldl
+LDFLAGS=-lstdc++ -lurcu -lpthread -ldl -fno-exceptions
 CFLAGS=-I$(s) -std=c11
 CXXFLAGS=-I$(s) -std=c++14
 

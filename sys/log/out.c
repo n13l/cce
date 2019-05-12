@@ -40,9 +40,9 @@
  * Following log line if LOG_CAP_TIME is defined:
  *
  *	 +- month           +- process id
- *	 |  +- day          |      +- thread id  +- module    +- message
- *	 |  |               |      |                          |
- *	 04-29 22:43:20.244 1000  1000              main      message
+ *	 |  +- day          |      +- thread id      +- message
+ *	 |  |               |      |                 |
+ *	 04-29 22:43:20.244 1000  1000               example:  Hi 
  */
 
 #include <stdio.h>
@@ -55,9 +55,9 @@
 #include <ctype.h>
 
 #include <sys/compiler.h>
-#include <sys/tid.h>
 #include <sys/log.h>
-#include <cce/list.h>
+#include <bsd/list/slink.h>
+#include <bsd/list.h>
 #include <mem/alloc.h>
 #include <mem/stack.h>
 #include <sys/time.h>
@@ -66,6 +66,19 @@
 /* POSIX.1 requires PIPE_BUF to be at least 512 bytes. */
 #ifndef PIPE_BUF
 #define PIPE_BUF 512
+#endif
+
+#ifndef LOG_USER
+#define LOG_USER        (1<<3)  /* random user-level messages */
+#endif
+#ifndef LOG_DAEMON
+#define LOG_DAEMON      (3<<3)  /* system daemons */
+#endif
+#ifndef LOG_AUTH
+#define LOG_AUTH        (4<<3)  /* security/authorization messages */
+#endif
+#ifndef LOG_AUTHPRIV
+#define LOG_AUTHPRIV    (10<<3) /* security/authorization messages (private) */ 
 #endif
 
 static const char *type_names[] = {
@@ -84,14 +97,13 @@ enum log_out {
 	LOG_TYPE_STDOUT   = 2,
 	LOG_TYPE_STDERR   = 3,
 	LOG_TYPE_FILE     = 4,
-	LOG_OUTPUT_PIPE   = 5
 };
 
-static int opt_log_facility = 0;
 
 static int log_caps = 0;
 static int log_type = 0;
 
+void *log_userdata = NULL;
 int log_verbose = 0;
 int log_silent = 0;
 char progname[256] = {0};
@@ -99,20 +111,18 @@ int log_fd = -1;
 static struct timeval start = {0};
 static int started = 1;
 
+void (*log_msg_handler)(const char *prefix, const char *msg) = NULL;
+
 void
 log_open(const char *file)
 {
 	log_type = 0;
-	if (!strcmp(file, "syslog")) 
-		log_type = LOG_TYPE_SYSLOG;
-	else if (!strcmp(file, "stdout"))
+	if (!strcmp(file, "stdout"))
 		log_type = LOG_TYPE_STDOUT;
 	else if (!strcmp(file, "stderr"))
 		log_type = LOG_TYPE_STDERR;
 
 	switch (log_type) {
-	case LOG_TYPE_SYSLOG: 
-		openlog(progname, LOG_CONS | LOG_PID | LOG_NDELAY, 0);
 	case LOG_TYPE_STDOUT:
 		log_fd = fileno(stdout);
 		break;
@@ -125,6 +135,12 @@ log_open(const char *file)
 }
 
 void
+log_set_handler(void (*handler)(const char *, const char *))
+{
+	log_msg_handler = handler;
+}
+
+void
 log_name(const char *name)
 {
 	snprintf(progname, sizeof(progname) - 1, "%s", name);
@@ -133,11 +149,6 @@ log_name(const char *name)
 void
 log_close(void)
 {
-	switch (log_type) {
-	case LOG_TYPE_SYSLOG:
-		closelog();
-		break;
-	}
 }
 
 void
@@ -208,38 +219,54 @@ do_log_hdr_parse(struct log_ctx *c, char *p, int av)
  */
 
 void
-internal_log_vprintf(struct log_ctx *c, const char *fmt, va_list args)
+internal_asafe_vprintf(struct log_ctx *c, const char *fmt, va_list args)
 {
 	char msg[PIPE_BUF];
 	int sz = do_log_hdr_parse(c, msg, PIPE_BUF - 4);
-	char *p = msg + sz;
+	char *text, *p = msg + sz;
 
 	va_list args2;
 	va_copy(args2, args);
 	sz += vsnprintf(p, PIPE_BUF - sz - 2, fmt, args2);
 	va_end(args2);
 
+	text = p;
 	p = msg + sz; *p++ = '\n'; *p++ = 0; sz += 1;
-	if (log_type == LOG_TYPE_SYSLOG)
-		syslog(c->type> 7 ? 7: c->type, "%s", msg);
-	else
+	if (log_msg_handler) {
+		log_msg_handler("", text);
+	} else {
 		sz = write(log_fd, msg, sz);
+	}
 }
 
 void
-internal_log_printf(struct log_ctx *c, const char *fmt, ...)
+internal_asafe_printf(struct log_ctx *ctx, const char *fmt, ...)
 {
 	if (log_silent)
 		return;
 
 	va_list args;
 	va_start(args, fmt);
-	internal_log_vprintf(c, fmt, args);
+	internal_asafe_vprintf(ctx, fmt, args);
 	va_end(args);
 }
 
+void
+internal_log_write_hex(struct log_ctx *ctx, const u8 *buf, unsigned int size)
+{
+	if (log_silent)
+		return;
+
+	char msg[PIPE_BUF];
+	int sz = do_log_hdr_parse(ctx, msg, PIPE_BUF - 4);
+	char *p = msg + sz;
+
+	p = msg + sz; *p++ = '\n'; *p++ = 0; sz += 1;
+	sz = write(log_fd, msg, sz);
+}
+
 static inline size_t
-strlcpy(char * dst, const char * src, size_t siz)
+strlcpy(char *dst, const char *src, size_t siz)
 {
 	char *d = dst;
 	const char *s = src;
@@ -287,8 +314,7 @@ strlcat(char *dst, const char *src, size_t siz)
 }
 
 
-#define DUMP_WIDTH      16
-#define DUMP_WIDTH_LESS_INDENT(i) (DUMP_WIDTH -((i - (i > 6 ? 6:i) + 3) / 4))
+#define DUMP_WIDTH_LESS_INDENT(i) (16 -((i - (i > 6 ? 6:i) + 3) / 4))
 
 int
 b16_indent_cb(int (*cb) (const void *data, size_t len, void *u),

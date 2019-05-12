@@ -43,14 +43,7 @@
 #include <sys/compiler.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include <stdarg.h>
-#include <stdbool.h>
-#include <errno.h>
-#include <time.h>
-#include <syslog.h>
-#include "log/atomic.h"
-#include "log/asynch.h"
-#include "log/trace.h"
+#include <sys/log/atomic.h>
 
 __BEGIN_DECLS
 
@@ -89,7 +82,7 @@ enum log_msg {
  */
 
 #define info(fmt, ...) \
-  INTERNAL_LOG_PRINTF_ATOMIC(LOG_INFO, 0, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_INFO, 0, fmt, ## __VA_ARGS__)
 
 /*
  * error()
@@ -100,7 +93,7 @@ enum log_msg {
  */
 
 #define error(fmt, ...) \
-  INTERNAL_LOG_PRINTF_ATOMIC(LOG_ERROR, 0, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_ERROR, 0, fmt, ## __VA_ARGS__)
 
 /*
  * warning()
@@ -111,7 +104,7 @@ enum log_msg {
  */
 
 #define warning(fmt, ...) \
-  INTERNAL_LOG_PRINTF_ATOMIC(LOG_WARN, 0, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_WARN, 0, fmt, ## __VA_ARGS__)
 
 /*
  * die()
@@ -123,7 +116,7 @@ enum log_msg {
 
 #define die(fmt, ...) \
 ({ \
-	INTERNAL_LOG_PRINTF_ATOMIC(LOG_ERROR, 0, fmt, ## __VA_ARGS__); exit(1);\
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_ERROR, 0, fmt, ## __VA_ARGS__); exit(1);\
 })
 
 /*
@@ -136,7 +129,7 @@ enum log_msg {
 
 
 #define debug1(fmt, ...) \
-	INTERNAL_LOG_PRINTF_ATOMIC(LOG_DEBUG1, 1, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_DEBUG1, 1, fmt, ## __VA_ARGS__)
 
 /*
  * debug2()
@@ -147,7 +140,7 @@ enum log_msg {
  */
 
 #define debug2(fmt, ...) \
-	INTERNAL_LOG_PRINTF_ATOMIC(LOG_DEBUG2, 2, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_DEBUG2, 2, fmt, ## __VA_ARGS__)
 
 /*
  * debug3()
@@ -158,7 +151,7 @@ enum log_msg {
  */
 
 #define debug3(fmt, ...) \
-	INTERNAL_LOG_PRINTF_ATOMIC(LOG_DEBUG3, 3, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_DEBUG3, 3, fmt, ## __VA_ARGS__)
 
 /*
  * debug4()
@@ -169,7 +162,7 @@ enum log_msg {
  */
 
 #define debug4(fmt, ...) \
-	INTERNAL_LOG_PRINTF_ATOMIC(LOG_DEBUG4, 4, fmt, ## __VA_ARGS__)
+  INTERNAL_ASAFE_ATOMIC_PRINTF(LOG_DEBUG4, 4, fmt, ## __VA_ARGS__)
 
 /*
  * debug1_buf()
@@ -180,19 +173,22 @@ enum log_msg {
  */
 
 #define debug1_hex(buf, size) \
-	INTERNAL_LOG_B16_ATOMIC(LOG_DEBUG1, 1, buf, size)
+  INTERNAL_LOG_B16_ATOMIC(LOG_DEBUG1, 1, buf, size)
 
 void
 log_name(const char *name);
 
 void
-log_open(const char *file, int facility);
+log_open(const char *file);
 
 void
 log_close(void);
 
 void
 log_setcaps(int caps);
+
+void
+log_set_handler(void (*handler)(const char *, const char *));
 
 int
 log_getcaps(void);

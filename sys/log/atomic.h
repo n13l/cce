@@ -37,13 +37,10 @@
 #define __LOCKFREE_LOGGING_ATOMIC_H__
 
 #include <sys/compiler.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <errno.h>
 #include <time.h>
-#include <syslog.h>
 
 __BEGIN_DECLS
 
@@ -101,25 +98,40 @@ struct log_ctx {
 	}; ctx; \
 })
 
-#define INTERNAL_LOG_PRINTF_ATOMIC(type, require, fmt, ...) \
+#define INTERNAL_ASAFE_ATOMIC_PRINTF(type, require, fmt, ...) \
 ({ \
-  if (log_verbose >= require) { \
+  if (!log_silent && log_verbose >= require) { \
     struct log_ctx log_ctx = INTERNAL_LOG_CTX_INIT(type); \
-    internal_log_printf(&log_ctx, fmt, ## __VA_ARGS__); \
+    internal_asafe_printf(&log_ctx, fmt, ## __VA_ARGS__); \
   } \
 })
 
 #define INTERNAL_LOG_B16_ATOMIC(type, require, buf, size) \
 ({ \
-  if (log_verbose >= require) { \
+  if (!log_silent && log_verbose >= require) { \
     struct log_ctx log_ctx = INTERNAL_LOG_CTX_INIT(type); \
     internal_log_write_hex(&log_ctx, buf, size); \
   } \
 })
 
-
-void internal_log_printf(struct log_ctx *, const char *fmt, ...)
+void internal_asafe_printf(struct log_ctx *, const char *fmt, ...)
                          __attribute__ ((__format__ (__printf__, 2, 3)));
+
+#ifdef CONFIG_DEBUG
+#define trace1(fmt, ...) \
+  __log_write_atomic_helper(LOG_DEBUG1, 1, fmt, ## __VA_ARGS__)
+#define trace2(fmt, ...) \
+  __log_write_atomic_helper(LOG_DEBUG2, 2, fmt, ## __VA_ARGS__)
+#define trace3(fmt, ...) \
+  __log_write_atomic_helper(LOG_DEBUG3, 3, fmt, ## __VA_ARGS__)
+#define trace4(fmt, ...) \
+  __log_write_atomic_helper(LOG_DEBUG4, 4, fmt, ## __VA_ARGS__)
+#else
+#define trace1(fmt, ...) do {} while(0)
+#define trace2(fmt, ...) do {} while(0)
+#define trace3(fmt, ...) do {} while(0)
+#define trace4(fmt, ...) do {} while(0)
+#endif/*CONFIG_DEBUG*/
 
 __END_DECLS
 

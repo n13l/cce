@@ -78,8 +78,12 @@ typedef u32 endian_bitwise wsum;
 #define _constructor_with_priority(p) __attribute__((constructor(p)))
 
 /* branch prediction */ 
+#ifndef likely
 #define likely(x)      __builtin_expect (!!(x), 1)
+#endif
+#ifndef unlikely
 #define unlikely(x)    __builtin_expect (!!(x), 0)
+#endif
 
 #define bswap16(x)     __builtin_bswap16(x)
 #define bswap32(x)     __builtin_bswap32(x)
@@ -110,8 +114,8 @@ typedef u32 endian_bitwise wsum;
 # define unlikely(x)    (x)
 #endif
 
-#ifndef min
-#define min(a,b) (((a)<(b))?(a):(b))
+#ifndef __min
+#define __min(a,b) (((a)<(b))?(a):(b))
 #endif
 
 #ifndef __max
