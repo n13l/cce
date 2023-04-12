@@ -175,69 +175,6 @@
 		return name[name##_validate(index)]; \
 	} \
 
-#define DEFINE_STATIC_ARRAY_ALIGNED(type, name, bits, item, ...) \
-	static const unsigned name##_mask = ~((1<<(bits))-1); \
-	static const unsigned name##_bits = bits; \
-	_Pragma("clang diagnostic push") \
-	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
-	static type name[1 << (bits)] = { \
-		[0 ... ((1<<(bits))-1)] = item, __VA_ARGS__ \
-	}; \
-	_Pragma("clang diagnostic pop") \
-	static inline unsigned name##_index_zb(unsigned index) { \
-		unsigned _x = !(name##_mask & index) * index; \
-		return _x + ((index && !_x) * ((1<<bits)-1)); \
-	} \
-	static inline type name##_fetch_zb(unsigned index) { \
-		return name[name##_index_zb(index)]; \
-	} \
-	static inline unsigned name##_index_ob(unsigned index) { \
-		return !(name##_mask & index) * index; \
-	} \
-	static inline type name##_fetch_ob(unsigned index) { \
-		return name[name##_index_ob(index)]; \
-	} \
-	static inline unsigned name##_index(unsigned index) { \
-		return index < array_size(name) ? index: array_size(name) - 1;\
-	} \
-	static inline type name##_fetch(unsigned index) { \
-		return name##_fetch_ob(index); \
-	}
-
-#define DEFINE_ARRAY_ALIGNED(type, name, bits, item, ...) \
-	const unsigned name##_mask = ~((1<<(bits))-1); \
-	const unsigned name##_bits = bits; \
-	_Pragma("clang diagnostic push") \
-	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
-	type name[1 << (bits)] = { \
-		[0 ... ((1<<(bits))-1)] = item, __VA_ARGS__ \
-	}; \
-	_Pragma("clang diagnostic pop") 
-
-#define DECLARE_ARRAY_ALIGNED(type, name, bits) \
-	extern const unsigned name##_mask; \
-	extern const unsigned name##_bits; \
-	extern type name[1 << (bits)]; \
-	static inline unsigned name##_index_zb(unsigned index) { \
-		unsigned _x = !(name##_mask & index) * index; \
-		return _x + ((index && !_x) * ((1<<bits)-1)); \
-	} \
-	static inline unsigned name##_index_ob(unsigned index) { \
-		return !(name##_mask & index) * index; \
-	} \
-	static inline type name##_fetch_zb(unsigned index) { \
-		return name[name##_index_zb(index)]; \
-	} \
-	static inline type name##_fetch_ob(unsigned index) { \
-		return name[name##_index_ob(index)]; \
-	} \
-	static inline unsigned name##_index(unsigned index) { \
-		return index < ARRAY_SIZE(name) ? index: ARRAY_SIZE(name) - 1;\
-	} \
-	static inline type name##_fetch(unsigned index) { \
-		return name[name##_index(index)]; \
-	}
-
 /* Run block on bits of number */
 #define VISIT_ARRAY_BITS_NUM(num, bit, block)                \
 {                                                                    \
@@ -245,31 +182,5 @@
 	const unsigned __typeof__(num) mask = (1 << (count - 1)); \
 	do {bit = (num & mask) != 0?1:0; block; mask >>= 1;} while (mask > 0); \
 }
-
-#define BSEARCH_FIRST_GE_CMP(ary,N,x,ary_lt_x) \
-({ \
-	unsigned l = 0, r = (N); \
-	while (l < r) { \
-		unsigned m = (l+r)/2; \
-		if (ary_lt_x(ary,m,x)) \
-			l = m+1; \
-		else \
-			r = m; \
-	} \
-	l; \
-})
-
-#define ARRAY_LT_NUM(ary,i,x) (ary)[i] < (x)
-#define BSEARCH_FIRST_GE(ary,N,x) BSEARCH_FIRST_GE_CMP(ary,N,x,ARRAY_LT_NUM)
-#define BSEARCH_EQ(ary,N,x) \
-({ \
-	int i = BSEARCH_FIRST_GE(ary,N,x); \
-	if (i >= (N) || (ary)[i] != (x)) i=-1; i; \
-})
-
-/* Run block */
-#define VISIT_BLOCK(cond, block) \
-	if (cond) { block }
-
 
 #endif
