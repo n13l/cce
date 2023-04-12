@@ -28,7 +28,6 @@
 #define __HASH_GENERIC_H__
 
 #include <sys/compiler.h>
-#include <bsd/list/tailq.h>
 #include <bsd/tailq.h>
 #include <bsd/hash/fn.h>
 #include <bsd/hash/table.h>

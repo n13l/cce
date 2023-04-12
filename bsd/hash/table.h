@@ -1,7 +1,7 @@
 /*
  * Generic hash functions 
  *
- * The MIT License (MIT)         
+ * The MIT License (MIT)
  *
  * Copyright (c) 2013 - 2019                        Daniel Kubec <niel@rtfm.cz>
  *
@@ -29,33 +29,44 @@
 
 #include <sys/compiler.h>
 #include <sys/cpu.h>
-#include <bsd/list/tailq.h>
 #include <bsd/tailq.h>
 #include <math.h>
 #include <limits.h>
 
 __BEGIN_DECLS
 
-#define DEFINE_HASHTABLE(name, bits) \
-	struct tailq name[1 << (bits)] = {[0 ... ((1<<(bits))-1)] = TAILQ_INIT}
+#define DECLARE_HASHTABLE(name, bits) \
+	struct tailq name[1 << (bits)]
+#define DEFINE_HASHTABLE(name, bits) DECLARE_HASHTABLE(name, bits) = { \
+		[0 ... ((1<<(bits))-1)] = init_tailq \
+	}
 
-#define hash_bits(name) (unsigned int)(log2(array_size(name)))
-#define hash_entries(name) array_size(name)
+#define hash_init_table(name, bits) \
+({ \
+	for (unsigned i = 0; i < (1 << bits); i++) \
+		name[i] = init_tailq; \
+})
 
-#define hash_data(name, key) (u32)hash_u32(key, hash_bits(name))
-#define hash_skey(name, key) (u32)hash_u32(hash_string(key), hash_bits(name))
-#define hash_sbuf(name, key, len) (u32)hash_u32(hash_buffer(key, len), hash_bits(name))
+#define hash_bits(name) (unsigned)(log2(array_size(name)))
+#define hash_add(table, member, hash) tailq_add(&(table[hash]),member) 
+#define hash_seq(seqno, bits) ({(seqno & ((1 << bits) - 1));})
 
-#define hash_add(table, member, slot) tailq_add(&table[slot],member)
+/* (RUC) recently-used-cache */
+#define hash_ruc(table, node, hash) { \
+	tailq_del(node); tailq_add(&(table[hash]),node); \
+}
+
 #define hash_del(node) tailq_del(node);
-#define hash_get(table, key) &name[hash_data(key, hash_bits(name))]
+#define hash_del_init(node) tailq_del_init(node);
 
-#define hash_empty(table, slot) tailq_empty(&table[slot])
+#define hash_empty(table, hash) tailq_empty(&(table[hash]))
+#define hash_init(node) (node) = init_qnode
 
-#define hash_init(node) (node) = TAILQ_INIT_NODE
+#define hash_for_each(table, hash, it, type, member) \
+	tailq_for_each((table[hash]), it, type, member)
 
-#define hash_for_each(table, slot, it, type, member) \
-	tailq_for_each(&table[slot], it, type, member)
+#define hash_for_each_delsafe(table, hash, it, type, member) \
+	tailq_for_each_delsafe((table[hash]), it, type, member)
 
 __END_DECLS
 

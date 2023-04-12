@@ -1,7 +1,7 @@
 /*
  * Intrusive containers for single, double and circular linked list
  *
- * The MIT License (MIT)         
+ * The MIT License (MIT)
  *
  * Copyright (c) 2013 - 2019                        Daniel Kubec <niel@rtfm.cz>
  *
@@ -22,55 +22,39 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
  * THE SOFTWARE.
- *
- * Intrusive lists
- *
- * CPU will prefetch memory and cache because they are stored contiguously.
- *
- */
+ **/
 
 #ifndef __GENERIC_LIST_H__
 #define __GENERIC_LIST_H__
 
 #include <sys/compiler.h>
-#include <bsd/list/slink.h>
+#include <bsd/sort.h>
 
 __BEGIN_DECLS
 
-#define DEFINE_LIST(name)   struct list name = LIST_INIT(name)
-#define DEFINE_NODE(name)   struct node name = NODE_INIT
-#define DEFINE_LIST_ITEM(type,member, ...) \
-({ \
-	type __item = (type) { .member = NODE_INIT, ## __VA_ARGS__ }; \
-	& __item.member; \
-})
+#define DECLARE_LIST(name)   struct list name
+#define DEFINE_LIST(name)    DECLARE_LIST(name) = __list_init(name)
+#define DEFINE_NODE(name)    struct node name = NODE_INIT
 
 #define LIST_ITEM(item, node) &(item.node)
 #define NODE_INIT            { .next = NULL, .prev = NULL } 
-#define LIST_INIT(name)      {{(struct node *)&(name), (struct node *)&(name)}}
 
-#define NODE_HEAD(list)             (list).head.next
-#define NODE_HEAD_DELSAFE(list, it) ({it=(list).head.next;NULL;})
-#define NODE_ITER(list, it)         ((it)!=&(list).head)
+#define __list_init(name)    {{(struct node *)&(name), (struct node *)&(name)}}
 
-#define NODE_HEAD_TYPE(list, type, member) \
-	__container_of(NODE_HEAD(list),type,member)
-#define NODE_NEXT_TYPE(it, type, member) \
-	__container_of((it)->member.next,type,member)
-#define NODE_ITER_TYPE(list, it, member) \
-	(&(it->member) != &(list).head)
-#define NODE_ITER_TYPE_DELSAFE(list, it, it_next, type, member) \
-	NODE_ITER_TYPE(list, it, member) && \
-	({(it_next) = NODE_NEXT_TYPE(it,type,member);1;}) \
-	
-struct node  { struct node  *next, *prev; };
-struct list  { struct node   head; };
-struct clist { struct node   head; unsigned int size; };
+struct node { struct node *next, *prev; };
+struct list { struct node head; };
 
 static inline void
 node_init(struct node *node)
 {
-	node->next = node->prev = NULL;
+	node->next = node;
+	node->prev = node;
+}
+
+static inline unsigned
+node_added(struct node *node)
+{
+	return node->next != node && node->prev != node;
 }
 
 static inline void
@@ -80,40 +64,34 @@ list_init(struct list *list)
 	head->next = head->prev = head;
 }
 
-static inline void *
+static inline struct node *
 list_head(struct list *list)
 {
 	return (list->head.next != &list->head) ? list->head.next: NULL;
 }
 
-static inline void *
+static inline struct node *
 list_first(struct list *list)
 {
-	return (list->head.next != &list->head) ? list->head.next: NULL;
+	return list_head(list);
 }
 
-static inline void *
-list_tail(struct list *list)
-{
-	return (list->head.prev != &list->head) ? list->head.prev: NULL;
-}
-
-static inline void *
+static inline struct node *
 list_last(struct list *list)
 {
 	return (list->head.prev != &list->head) ? list->head.prev: NULL;
 }
 
-static inline void *
+static inline struct node *
 list_next(struct list *list, struct node *node)
 {
-	return (node->next != &list->head) ? (void *)node->next: NULL;
+	return (node->next != &list->head) ? node->next: NULL;
 }
 
-static inline void *
+static inline struct node *
 list_prev(struct list *list, struct node *node)
 {
-	return (node->prev != &list->head) ? (void *)node->prev: NULL;
+	return (node->prev != &list->head) ? node->prev: NULL;
 }
 
 static inline int
@@ -123,50 +101,35 @@ list_empty(struct list *list)
 }
 
 static inline void
-list_add_after(struct node *node, struct node *after)
+list_add_after(struct node *node, struct node *prev)
 {
-	struct node *before = after->next;
-	node->next = before;
-	node->prev = after;
-	before->prev = node;
-	after->next = node;
-}
-
-static inline void
-list_add_before(struct node *node, struct node *before)
-{
-	struct node *after = before->prev;
-	node->next = before;
-	node->prev = after;
-	before->prev = node;
-	after->next = node;
-}
-
-static inline void
-list_add_head(struct list *list, struct node *node)
-{
-	list_add_after(node, &list->head);
-}
-
-static inline void
-list_add_tail(struct list *list, struct node *node)
-{
-	list_add_before(node, &list->head);
+	prev->next->prev = node;
+	node->next = prev->next;
+	node->prev = prev;
+	prev->next = node;
 }
 
 static inline void
 list_add(struct list *list, struct node *node)
 {
-	list_add_before(node, &list->head);
+	struct node *head = &list->head;
+	list_add_after(node, head);
 }
 
 static inline void 
 list_del(struct node *node)
 {
-	struct node *before = node->prev;
-	struct node *after  = node->next;
-	before->next = after;
-	after->prev = before;
+	struct node *next = node->next;
+	struct node *prev = node->prev;
+	next->prev = prev;
+	prev->next = next;
+}
+
+static inline void
+list_mov_head(struct list *list, struct node *node)
+{
+	list_del(node);
+	list_add(list, node);
 }
 
 static inline unsigned int
@@ -222,33 +185,6 @@ list_disable_prev(struct list *list)
 	return list->head.next;
 }
 
-/**
- * list_del_cmp - compare two lists and delete same items
- *
- * @a:          the first list.
- * @b:          the second list.
- * @fn:	        the strcmp() like function which return zero for equal items
- * @type:       the optional structure type
- * @member:     the optional name of the node within the struct.
- *
- */
-
-#define list_del_cmp(a, b, ...) \
-	va_dispatch(list_del_cmp,__VA_ARGS__)(a,b,__VA_ARGS__)
-#define list_del_cmp1(a, b, fn) \
-({ \
-	list_for_each_delsafe(a, x) list_for_each_delsafe(b, y) { \
-		if (fn(x, y)) continue; list_del(x); list_del(y); \
-	} \
-})
-#define list_del_cmp3(a, b, fn, type, member) \
-({ \
-	list_for_each_delsafe(a, x) list_for_each_delsafe(b, y) { \
-		if (container_cmp(fn,x, y, type, member)) continue; \
-		list_del(x); list_del(y); \
-	} \
-})
-
 #define list_move_before(x, y)   ({ list_del(x); list_add_before(x, y); })
 #define list_node struct node
 
@@ -263,88 +199,112 @@ list_disable_prev(struct list *list)
  *
  * @list:       the your list.
  * @it:	        the type safe iterator
- * @member:     the optional name of the node within the struct.
  */
 
-#define list_walk(list, ...) \
-	va_dispatch(list_walk,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_walk1(list, it) \
-	for ((it) = NODE_HEAD(list); NODE_ITER(list,it); (it) = (it)->next)
-#define list_walk2(list, it, member) \
-	for ((it) = NODE_HEAD_TYPE(list, __typeof__(*it), member); \
-	            NODE_ITER_TYPE(list, it, member); \
-	     (it) = NODE_NEXT_TYPE(it, __typeof__(*it), member))
-
-/**
- * list_walk_next - iterate over list with existing iterator
- *
- * @list:       the your list.
- * @it:	        the type safe iterator
- * @member:     the optional name of the node within the struct.
- */
-
-#define list_walk_next(list, ...) \
-	va_dispatch(list_walk_next,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_walk_next1(list, it) \
-	if ((it) != &(list).head) \
-	for ((it) = (it)->next; NODE_ITER(list,it); (it) = (it)->next)
-#define list_walk_next2(list, it, member) \
-	if (&(it)->member != &(list).head) \
-	for ((it) = NODE_NEXT_TYPE(it, __typeof__(*it), member); \
-	            NODE_ITER_TYPE(list, it, member); \
-	     (it) = NODE_NEXT_TYPE(it, __typeof__(*it), member))
+#define list_walk(self, it) \
+	for ((it) = (self).head.next; ((it) != &(self).head); (it) = (it)->next)
 
 /**
  * list_walk_delsafe  - iterate over list with declared iterator
  *
  * @list:       the your list.
  * @it:         the type safe iterator
- * @member:     the optional name of the node within the struct.
+ * @cur:        the temp node
  */
 
-#define list_walk_delsafe(list, ...) \
-	va_dispatch(list_walk_delsafe,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_walk_delsafe1(list, it) \
-	for (__typeof__(*it) *(it_next) = NODE_HEAD_DELSAFE(list, it); \
-	     ((it) != &list.head) && ({(it_next) = (it)->next;1;}); \
-	     (it) = it_next)
+#define list_walk_delsafe(self, it, cur) \
+	for ((it) = (self).head.next; ((it) != &(self).head) && \
+	   ({(cur) = (it)->next;1;}); (it) = (cur))
+
+/**
+ * list_walk_reverse
+ *
+ * @list:       the your list.
+ * @it:         the iterator
+ */
+
+#define list_walk_reverse(self, it) \
+	for ((it) = (self).head.prev; ((it)!=&(self).head); (it) = (it)->prev)
+
+/**
+ * list_walk_reverse_delsafe
+ *
+ * @list:       the your list.
+ * @it:         the iterator
+ */
+
+#define list_walk_reverse_delsafe(self, it, cur) \
+	for ((it) = (self).head.prev; ((it) != &(self).head) && \
+	    ({(cur) = (it)->prev;1;}); (it) = (cur))
+
+/**
+ * list_walk_reverse_cont
+ *
+ * @list:       the your list.
+ * @it:         the iterator
+ */
+
+#define list_walk_reverse_cont(self, it) \
+	for (; (it) != &self.head; (it) = (it)->prev(it))
 
 /**
  * list_for_each - iterate over list 
  *
  * @list:       the your list.
  * @it:	        the type safe iterator
- * @type:       the optional structure type
- * @member:     the optional name of the node within the struct.
+ * @type:       the structure type
+ * @member:     the name of the node within the struct.
  */
 
-#define list_for_each(list, ...) \
-	va_dispatch(list_for_each,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_for_each1(list, it) \
-	for (struct node *(it) = NODE_HEAD(list); \
-	    (it) != &(list).head; (it) = (it)->next)
-#define list_for_each3(list, it, type, member) \
-	for (type *(it) = NODE_HEAD_TYPE(list, type, member); \
-	     &(it->member) != &(list).head; \
-	     (it) = NODE_NEXT_TYPE(it, type, member))
+#define list_for_each(self, it, type, member) \
+	for (type *(it) = container_of(((self).head.next), type, member); \
+	     (&(it)->member) != &((self).head); \
+	     (it) = container_of((it)->member.next, type, member))
 
 /**
  * list_for_each_delsafe - iterate over list with safety against removal
  *
  * @list:       the your list.
  * @it:         the type safe iterator 
- * @type:       the optional structure type
- * @member:     the optional name of the node within the struct.
+ * @type:       the structure type
+ * @member:     the name of the node within the struct.
  */
 
-#define list_for_each_delsafe(list, ...) \
-	va_dispatch(list_for_each_delsafe,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_for_each_delsafe1(list, it) \
-	for (struct node *__it, *it = (list).head.next; \
-	     (__it) = it->next, (it) != &(list).head; (it) = __it)
-#define list_for_each_delsafe3(list, it, type, member) \
-	for (type *__it, *it = NODE_HEAD_TYPE(list, type, member); \
-	     NODE_ITER_TYPE_DELSAFE(list, it, __it, type, member);(it) = __it)
+#define list_for_each_delsafe(self, it, type, member) \
+	for (type *(__it), *(it) = container_of((self).head.next,type,member); \
+	     (&(it)->member) != &((self).head) && \
+	     ({(__it) = container_of((it)->member.next,type,member);1;}); \
+	     (it) = (__it))
+
+/**
+ * list_for_each_reverse - iterate over list 
+ *
+ * @list:       the your list.
+ * @it:	        the type safe iterator
+ * @type:       the structure type
+ * @member:     the name of the node within the struct.
+ */
+
+#define list_for_each_reverse(self, it, type, member) \
+	for (type *(it) = container_of(((self).head.prev), type, member); \
+	     (&(it)->member) != &((self).head); \
+	     (it) = container_of((it)->member.prev, type, member))
+
+/**
+ * list_for_each_reverse_delsafe - iterate over list with safety against removal
+ *
+ * @list:       the your list.
+ * @it:         the type safe iterator 
+ * @type:       the structure type
+ * @member:     the name of the node within the struct.
+ */
+
+#define list_for_each_reverse_delsafe(self, it, type, member) \
+	for (type *(__it), *(it) = container_of((self).head.prev,type,member); \
+	     (&(it)->member) != &((self).head) && \
+	     ({(__it) = container_of((it)->member.prev,type,member);1;}); \
+	     (it) = (__it))
+
 
 /**
  * list_sort  - sort list 
@@ -382,259 +342,6 @@ list_disable_prev(struct list *list)
 #define list_sort_dsc(list, ...) \
   va_dispatch(insert_sort_dsc,__VA_ARGS__)(list,__list, __VA_ARGS__)
 
-/**
- * list_ddup  - deduplicate list
- *
- * @list:       the your list.
- * @fn:	        the type safe comparator
- * @type:       the optional structure type
- * @member:	the optional name of the node within the struct.
- *
- * note: require sorted list
- */
-
-#define list_ddup(list, ...) \
-	va_dispatch(list_ddup,__VA_ARGS__)(list,__VA_ARGS__)
-#define list_ddup1(list, typecmp) \
-({ \
-	struct node *__prev = NULL; list_for_each_delsafe(*(list), it) \
-		if (__prev && !typecmp(__prev, it)) \
-			list_del(it); else __prev = it; \
-})
-#define list_ddup3(list, typecmp, type, member) \
-({ \
-	type *__prev = NULL; list_for_each_delsafe(*(list), it, type, member) \
-		if (__prev && !typecmp(__prev, it)) \
-			list_del(&(it->member)); else __prev = it; \
-})
-
-static inline void
-snode_init(struct snode *snode)
-{
-	__snode_init(snode);
-}
-
-static inline void
-slist_add(struct snode *node, struct snode *after)
-{
-	__slist_add(node, after);
-}
-
-static inline void
-slist_del(struct snode *node, struct snode *prev)
-{
-	__slist_del(node, prev);
-}
-
-/**
- * snode_split - split single-linked list 
- * @head:          the first list.
- */
-
-#define snode_split(head) \
-({ \
-	__typeof__(*head) *node, *fast, *slow; \
-	for (fast = slow = head; fast->next && fast->next->next; ) { \
-		fast = fast->next->next; slow = slow->next; \
-	} \
-	node = slow->next; slow->next = NULL; node; \
-})
-
-/**
- * slist_merge_sorted_asc - merge sorted single linked-list
- *
- * @head1:      the head of first list
- * @head2:      the head of second list
- * @cmp:        the type safe comparator
- * @type:       the optional structure type
- * @member:     the optional name of the node within the struct.
- */
-
-#define slist_merge_sorted_asc(head1,head2, ...) \
-	va_dispatch(slist_merge_sorted_asc,__VA_ARGS__)(head1,head2,__VA_ARGS__)
-#define slist_merge_sorted_asc1(head1, head2, cmp) \
-({ \
-	__typeof__(*head1) *x = head1, *y = head2, *n = NULL, **z = &n; \
-	for (; x && y; z = &((*z)->next) ) { \
-		if (cmp(x, y) > 0) \
-			{ *z = y; y = y->next; } \
-		else \
-			{ *z = x; x = x->next; } \
-	} \
-	*z = x ? x: y; \
-	n; \
-})
-#define slist_merge_sorted_asc3(head1, head2, cmp, type, member) \
-({ \
-	__typeof__(*head1) *x = head1, *y = head2, *n = NULL, **z = &n; \
-	for (; x && y; z = &((*z)->next) ) { \
-		if (container_cmp(cmp, x, y, type, member) > 0) \
-			{ *z = y; y = y->next; } \
-		else \
-			{ *z = x; x = x->next; } \
-	} \
-	*z = x ? x: y; \
-	n; \
-})
-
-/**
- * slist_merge_sorted_dsc - merge sorted single linked-list
- *
- * @head1:      the head of first list
- * @head2:      the head of second list
- * @cmp:        the type safe comparator
- * @type:       the optional structure type
- * @member:     the optional name of the node within the struct.
- */
-
-#define slist_merge_sorted_dsc(head1,head2, ...) \
-	va_dispatch(slist_merge_sorted_dsc,__VA_ARGS__)(head1,head2,__VA_ARGS__)
-#define slist_merge_sorted_dsc1(head1, head2, cmp) \
-({ \
-	__typeof__(*head1) *x = head1, *y = head2, *n = NULL, **z = &n; \
-	for (; x && y; z = &((*z)->next) ) { \
-		if (cmp(x, y) < 0) \
-			{ *z = y; y = y->next; } \
-		else \
-			{ *z = x; x = x->next; } \
-	} \
-	*z = x ? x: y; \
-	n; \
-})
-#define slist_merge_sorted_dsc3(head1, head2, cmp, type, member) \
-({ \
-	__typeof__(*head1) *x = head1, *y = head2, *n = NULL, **z = &n; \
-	for (; x && y; z = &((*z)->next) ) { \
-		if (container_cmp(cmp, x, y, type, member) < 0) \
-			{ *z = y; y = y->next; } \
-		else \
-			{ *z = x; x = x->next; } \
-	} \
-	*z = x ? x: y; \
-	n; \
-})
-
-/**
- * snode_walk  - iterate over nodes with declared iterator
- *
- * @node        the node with next relation, null terminated
- * @it:	        the type safe iterator
- * @member:     the optional name of the node within the struct.
- */
-
-#define snode_walk(node, ...) \
-	va_dispatch(snode_walk,__VA_ARGS__)(node,__VA_ARGS__)
-#define snode_walk1(node, it) \
-	for ((it) = (node); (it); (it) = (it)->next)
-
-/**
- * slist_walk  - iterate over list with declared iterator
- *
- * @list:       the your list.
- * @it:	        the type safe iterator
- * @member:     the optional name of the node within the struct.
- */
-
-#define slist_walk(list, ...) \
-	va_dispatch(slist_walk,__VA_ARGS__)(list,__VA_ARGS__)
-#define slist_walk1(list, it) \
-	for ((it) = NODE_HEAD(list); (it); (it) = (it)->next)
-
-/**
- * slist_walk_next - iterate over list with existing iterator
- *
- * @it:	        the type safe iterator
- * @member:     the optional name of the node within the struct.
- */
-
-#define slist_walk_next(list, ...) \
-	va_dispatch(list_walk_next,__VA_ARGS__)(list,__VA_ARGS__)
-#define slist_walk_next1(list, it) \
-	for ((it) = (it)->next; (it); (it) = (it)->next)
-
-#define slist_for_each(item, member, it) \
-	for (; item; item = it)
-
-#define slist_for_each_delsafe(item, member, it) \
-	for (; item && ({it=(__typeof__(item))item->member.next;1;}); item = it)
-
 __END_DECLS
-
-#ifdef __cplusplus
-template <typename T, snode T:: *member>
-struct __slist: slist {
-	__slist() {};
-	__slist(slist &head): slist(head) {};
-};
-
-template <typename T, snode T:: *member> constexpr
-T *slist_head(__slist<T, member> *const head)
-{
-	return __slist_entry(__slist_head(head), T, member);
-}
-
-template <typename T, snode T:: *member> constexpr
-T *slist_first(__slist<T, member> *const head)
-{
-	return __slist_entry(__slist_first(head), T, member);
-}
-
-template <typename T, snode T:: *member>
-T *slist_next(const __slist<T, member> *const, T *const x)
-{
-	return __slist_entry(__slist_next(&(x->*member)), T, member);
-}
-
-template <typename T, snode T:: *member> constexpr
-T *slist_begin(__slist<T, member> *const head)
-{
-	return __slist_entry(__slist_begin(head), T, member);
-}
-
-template <typename T, snode T:: *member> constexpr
-T *slist_end(__slist<T, member> *const head)
-{
-	return __slist_entry(__slist_end(head), T, member);
-}
-
-/*
-template <typename T, snode T:: *member>
-void slist_add_head(slist<T, member> *const head, T *const x)
-{
-	__slist_insert_head(head, &(x->*member));
-}
-
-template <typename T, snode T:: *member>
-void slist_add_after(slist<T, member> *const, T *const x, T *const y)
-{
-	__slist_add_after(&(x->*member), &(y->*member));
-}
-
-template <typename T, snode T:: *member>
-void slist_del_after(slist<T, member> *const, T *const x)
-		
-{
-	__slist_del_after(&(x->*member));
-}
-*/
-
-#ifdef CONFIG_URCU
-
-template <typename T, snode T:: *member>
-void slist_remove_after_rcu(slist<T, member> *const, T *const x)
-		
-{
-	__slist_remove_after_rcu(&(x->*member));
-}
-
-#endif/*CONFIG_URCU*/
-
-/*
-std::for_each(first, last, [](const auto& it) {
-	cout << it->name;
-});
-*/
-
-#endif
 
 #endif/*__GENERIC_LIST_H__*/

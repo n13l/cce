@@ -1,7 +1,7 @@
 /*
  * Generic hash functions 
  *
- * The MIT License (MIT)         
+ * The MIT License (MIT)
  *
  * Copyright (c) 2013 - 2019                        Daniel Kubec <niel@rtfm.cz>
  *
@@ -47,12 +47,18 @@ hash_u64(u64 x, unsigned int bits)
 }
 
 static inline u32
-hash_u32(u32 x, unsigned int bits) 
+hash_u32(u32 x, unsigned int bits)
 {
 	x = ((x >> 16) ^ x) * 0x45d9f3b;
 	x = ((x >> 16) ^ x) * 0x45d9f3b;
 	x = (x >> 16) ^ x;
 	return x >> (32 - bits);
+}
+
+static inline unsigned int
+hash_seqence(unsigned int seqno, unsigned int bits)
+{
+	return (seqno & ((1 << bits) - 1));
 }
 
 /*
@@ -83,7 +89,7 @@ hash_u32_bernstein(u8 *key, u32 len, u32 level)
 }
 
 static inline unsigned long
-hash_ptr(const void *ptr, unsigned int bits)
+hash_ptr(void *ptr, unsigned int bits)
 {
 #if CPU_ARCH_BITS == 32
 	return (unsigned long)hash_u32((u32)ptr, bits);
@@ -93,19 +99,19 @@ hash_ptr(const void *ptr, unsigned int bits)
 }
 
 static inline unsigned long long
-hash_buffer(const char *ptr, unsigned int size)
+hash_buffer(const u8 *ptr, unsigned int size)
 {
     unsigned long long const seed = 0;
-#if CPU_ARCH_BITS == 32    
+#if CPU_ARCH_BITS == 32
     unsigned long long const hash = XXH32(ptr, size, seed);
 #elif CPU_ARCH_BITS == 64
     unsigned long long const hash = XXH64(ptr, size, seed);
-#endif    
+#endif
     return hash;
 }
 
 static inline u32
-hash_buffer_u32(const char *ptr, unsigned int size, unsigned int bits) 
+hash_buffer_u32(const u8 *ptr, unsigned int size, unsigned int bits)
 {
 	return ((u32)hash_buffer(ptr, size)) >> (32 - bits);
 }
@@ -114,7 +120,7 @@ static inline unsigned long long
 hash_string(const char *str)
 {
 	size_t size = strlen(str);
-	return hash_buffer(str, size);
+	return hash_buffer((u8*)str, size);
 }
 
 /* 
