@@ -72,10 +72,13 @@
  * can help reduce pipeline stalls and dependency chains.
  */
 
-#define USE_FETCH_INDEX_POW2_BITWISE 1
+#define USE_VERIFY_0_BASED_INDEX32_POW2_BITWISE 0
+#define USE_VERIFY_0_BASED_INDEX32_POW2_TERNARY 1
+#define USE_VERIFY_1_BASED_INDEX32_POW2_BITWISE 1
+#define USE_VERIFY_1_BASED_INDEX32_POW2_TERNARY 0
 
 /*
- * fetch_index32_pow2_zb() should take roughly 8 CPU cycles.
+ * verify_0bi32pow2_bw() should take roughly 7 CPU cycles.
  * However, this is a rough estimate and may vary depending on the CPU 
  * architecture, compiler optimizations, and other factors.
  *
@@ -90,14 +93,14 @@
  */
 
 static inline u32
-fetch_index32_pow2_zb_bitwise(u32 index, u32 mask)
+verify_0bi32pow2_bw(u32 index, u32 mask)
 {
-	u32 ____cond = -((index) > (mask));
-	return (((index) & ~____cond) | ((mask) & ____cond));
+	unsigned cond = -((index) > (mask));
+	return (((index) & ~cond) | ((mask) & cond));
 }
 
 /*
- * fetch_index32_pow2_zb_ternary() should take roughly 4 CPU cycles.
+ * verify_0bi32pow2_tn() should take roughly 4 CPU cycles.
  * However, this is a rough estimate and may vary depending on the CPU
  * architecture, compiler optimizations, and other factors.
  *
@@ -107,32 +110,29 @@ fetch_index32_pow2_zb_bitwise(u32 index, u32 mask)
  */
 
 static inline u32
-fetch_index32_pow2_zb_ternary(u32 index, u32 mask)
+verify_0bi32pow2_tn(u32 index, u32 mask)
 {
 	return index > mask ? mask: index;
 }
 
 /*
- * fetch_index32_pow2_ob_bitwise() should take roughly 6 CPU cycles.
+ * verify_1bi32pow2_bw() should take roughly 5 CPU cycles.
  * However, this is a rough estimate and may vary depending on the CPU
  * architecture, compiler optimizations, and other factors.
  *
- * not     esi
  * xor     eax, eax
- * test    esi, edi
+ * test    edi, edx
  * sete    al
  * neg     eax
  * and     eax, edi
  */
 
-static inline u32
-fetch_index32_pow2_ob_bitwise(u32 index, u32 mask)
-{
-	return (index & (-((index & ~mask) == 0)));
-}
+#define verify_1bi32pow2_bw(index, mask, msb) ({ \
+	(index & (-(!(index & msb)))); \
+})
 
 /*
- * fetch_index32_pow2_ob_ternary() should take roughly 5 CPU cycles.
+ * verify_1bi32pow2_tn() should take roughly 5 CPU cycles.
  * However, this is a rough estimate and may vary depending on the CPU
  * architecture, compiler optimizations, and other factors.
  *
@@ -142,22 +142,26 @@ fetch_index32_pow2_ob_bitwise(u32 index, u32 mask)
  * cmovb   eax, edx
  */
 
-static inline u32
-fetch_index32_pow2_ob_ternary(u32 index, u32 mask)
-{
-	return (index <= mask ? index: 0);
-}
-
-#if USE_FETCH_INDEX_POW2_BITWISE == 1
-
-#define fetch_index32_pow2_zb(index, mask) ({ \
-	fetch_index32_pow2_zb_bitwise(index, mask); \
+#define verify_1bi32pow2_tn(index, mask, msb) ({ \
+	(index <= mask ? index: 0); \
 })
 
-#define fetch_index32_pow2_ob(index, mask) ({ \
-	fetch_index32_pow2_ob_bitwise(index, mask); \
-})
+#if USE_VERIFY_0_BASED_INDEX32_POW2_BITWISE == 1
+#define verify_0bi32pow2(index, mask) \
+	({ verify_0bi32pow2_bw(index, mask); })
+#endif
+#if USE_VERIFY_0_BASED_INDEX32_POW2_TERNARY == 1
+#define verify_0bi32pow2(index, mask) \
+	({ verify_0bi32pow2_tn(index, mask); })
+#endif
 
+#if USE_VERIFY_1_BASED_INDEX32_POW2_BITWISE == 1
+#define verify_1bi32pow2(index, mask, msb) \
+	({ verify_1bi32pow2_bw(index, mask, msb); })
+#endif
+#if USE_VERIFY_1_BASED_INDEX32_POW2_TERNARY == 1
+#define verify_1bi32pow2(index, mask, msb) \
+	({ verify_1bi32pow2_tn(index, mask, msb); })
 #endif
 
 #endif

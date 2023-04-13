@@ -75,10 +75,10 @@
 	(*((type*)(((u8*)ptr) + offset))) = val
 
 #define FIELD_GET_AT(ptr, offset, type, val) \
-	val = (*((type*)(((u8*)ptr) + offset))) 
+	val = (*((type*)(((u8*)ptr) + offset)))
 
 /*
- * The ARRAY_SIZE_ZB_ARGS macro calculates the number of elements in a 
+ * The ARRAY_SIZE_0B_ARGS macro calculates the number of elements in a
  * zero-based array.
  *
  * - arr: The array for which the size should be determined.
@@ -87,14 +87,33 @@
  * by the size of an individual element plus one anchor element.
  */
 
-#define ARRAY_SIZE_ZB_ARGS(type, ...) \
+#define ARRAY_SIZE_0B_ARGS(type, ...) \
 	((sizeof((type[]){__VA_ARGS__})/sizeof(type)) + 1)
 
-#define ARRAY_BITS_ZB_ARGS(type, ...) \
-	(BUILD_TIME_NUM_BITS(ARRAY_SIZE_ZB_ARGS(type,__VA_ARGS__)))
+#define ARRAY_BITS_0B_ARGS(type, ...) \
+	(BUILD_TIME_NUM_BITS(ARRAY_SIZE_0B_ARGS(type,__VA_ARGS__)))
 
-#define ARRAY_MASK_ZB_ARGS(type, ...) \
-	((1 << ARRAY_BITS_ZB_ARGS(type,__VA_ARGS__)) - 1)
+#define ARRAY_MASK_0B_ARGS(type, ...) \
+	((1 << ARRAY_BITS_0B_ARGS(type,__VA_ARGS__)) - 1)
+
+/*
+ * The ARRAY_SIZE_1B_ARGS macro calculates the number of elements in a
+ * one-based array.
+ *
+ * - arr: The array for which the size should be determined.
+ *
+ * This macro computes the size by dividing the total size of the array
+ * by the size of an individual element including zero for anchor element.
+ */
+
+#define ARRAY_SIZE_1B_ARGS(type, ...) \
+	((sizeof((type[]){__VA_ARGS__})/sizeof(type)))
+
+#define ARRAY_BITS_1B_ARGS(type, ...) \
+	(BUILD_TIME_NUM_BITS(ARRAY_SIZE_1B_ARGS(type,__VA_ARGS__)))
+
+#define ARRAY_MASK_1B_ARGS(type, ...) \
+	((1 << ARRAY_BITS_1B_ARGS(type,__VA_ARGS__)) - 1)
 
 /*
  * The DEFINE_ARRAY_STREAMLINED macro creates a fixed-size, power-of-two,
@@ -114,13 +133,13 @@
  */
 
 #define DEFINE_ARRAY_STREAMLINED(type, name, anchor, ...) \
-	const unsigned name##_size = ARRAY_SIZE_ZB_ARGS(type,__VA_ARGS__);\
-	const unsigned name##_mask = ARRAY_MASK_ZB_ARGS(type,__VA_ARGS__);\
+	const u32 name##_size = ARRAY_SIZE_0B_ARGS(type,__VA_ARGS__);\
+	const u32 name##_mask = ARRAY_MASK_0B_ARGS(type,__VA_ARGS__);\
 	_Pragma("clang diagnostic push") \
 	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
-	type name[1 << (ARRAY_BITS_ZB_ARGS(type,__VA_ARGS__))] \
+	type name[1 << (ARRAY_BITS_0B_ARGS(type,__VA_ARGS__))] \
 		__attribute__ ((aligned(16))) = { \
-		[0 ... (ARRAY_MASK_ZB_ARGS(type,__VA_ARGS__))] = \
+		[0 ... (ARRAY_MASK_0B_ARGS(type,__VA_ARGS__))] = \
 		anchor, __VA_ARGS__ \
 	}; \
 	_Pragma("clang diagnostic pop") \
@@ -134,14 +153,14 @@
  */
 
 #define DECLARE_ARRAY_STREAMLINED(type, name) \
-	extern const unsigned name##_mask; \
-	extern const unsigned name##_size; \
+	extern const u32 name##_mask; \
+	extern const u32 name##_size; \
 	extern type name[]; \
-	static inline unsigned name##_validate(unsigned index) { \
-		return fetch_index32_pow2_zb(index, name##_mask); \
+	static inline u32 name##_verify(u32 index) { \
+		return verify_0bi32pow2(index, name##_mask); \
 	} \
-	static inline type name##_at(unsigned index) { \
-		return name[name##_validate(index)]; \
+	static inline type name##_at(u32 index) { \
+		return name[name##_verify(index)]; \
 	}
 
 /*
@@ -158,22 +177,168 @@
  */
 
 #define STATIC_ARRAY_STREAMLINED(type, name, anchor, ...) \
-	static const unsigned name##_size = ARRAY_SIZE_ZB_ARGS(type,__VA_ARGS__);\
-	static const unsigned name##_mask = ARRAY_MASK_ZB_ARGS(type,__VA_ARGS__);\
+	static const u32 name##_size = ARRAY_SIZE_0B_ARGS(type,__VA_ARGS__);\
+	static const u32 name##_mask = ARRAY_MASK_0B_ARGS(type,__VA_ARGS__);\
 	_Pragma("clang diagnostic push") \
 	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
-	static type name[1 << (ARRAY_BITS_ZB_ARGS(type,__VA_ARGS__))] \
+	static type name[1 << (ARRAY_BITS_0B_ARGS(type,__VA_ARGS__))] \
 		__attribute__ ((aligned(16))) = { \
-		[0 ... (ARRAY_MASK_ZB_ARGS(type,__VA_ARGS__))] = \
+		[0 ... (ARRAY_MASK_0B_ARGS(type,__VA_ARGS__))] = \
 		anchor, __VA_ARGS__ \
 	}; \
 	_Pragma("clang diagnostic pop") \
-	static inline unsigned name##_validate(unsigned index) { \
-		return fetch_index32_pow2_zb(index, name##_mask); \
+	static inline u32 name##_verify(u32 index) { \
+		return verify_0bi32pow2(index, name##_mask); \
 	} \
-	static inline type name##_at(unsigned index) { \
-		return name[name##_validate(index)]; \
+	static inline type name##_at(u32 index) { \
+		return name[name##_verify(index)]; \
 	} \
+
+/*
+ * The DEFINE_ARRAY1_STREAMLINED macro creates a fixed-size,
+ * power-of-two, one-based array with a specified anchor element.
+ * This allows for fast, branchless access to the array elements.
+ *
+ * - type: The data type of the elements in the array.
+ * - name: The name of the array variable.
+ * - anchor: The default element.
+ * - __VA_ARGS__: A list of array elements to be initialized after the anchor.
+ *
+ * O(1) time branchless access for zero-based arrays.
+ *
+ * If the value in it has side effects, the side effects happen only once, not
+ * for each initialized field by the range initializer.
+ * Requires GNU Extensions (-std=gnu99)
+ */
+
+#define DEFINE_ARRAY1_STREAMLINED(type, name, anchor, ...) \
+	const u32 name##_size = ARRAY_SIZE_1B_ARGS(type,__VA_ARGS__);\
+	const u32 name##_mask = ARRAY_MASK_1B_ARGS(type,__VA_ARGS__);\
+	const u32 name##_msb = ~name##_mask; \
+	_Pragma("clang diagnostic push") \
+	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
+	type name[1 << (ARRAY_BITS_1B_ARGS(type,__VA_ARGS__))] \
+		__attribute__ ((aligned(16))) = { \
+		[0 ... (ARRAY_MASK_1B_ARGS(type,__VA_ARGS__))] = \
+		anchor, __VA_ARGS__ \
+	}; \
+	_Pragma("clang diagnostic pop") \
+
+/*
+ * The DECLARE_ARRAY1_STREAMLINED macro is used to declare an external
+ * streamlined array variable.
+ *
+ * - type: The data type of the elements in the array
+ * - name: The name of the array variable.
+ */
+
+#define DECLARE_ARRAY1_STREAMLINED(type, name) \
+	extern const u32 name##_mask; \
+	extern const u32 name##_size; \
+	extern const u32 name##_msb; \
+	extern type name[]; \
+	static inline u32 name##_verify(u32 index) { \
+		return verify_1bi32pow2(index, name##_mask, name##_msb); \
+	} \
+	static inline type name##_at(u32 index) { \
+		return name[name##_verify(index)]; \
+	}
+
+/*
+ * The STATIC_ARRAY1_STREAMLINED macro creates a static, fixed-size,
+ * power-of-two, one-based array with a specified anchor element.
+ *
+ * This allows for fast, branchless access to the array elements, while
+ * keeping the scope of the array limited to the current source file.
+ *
+ * - type: The data type of the elements in the array.
+ * - name: The name of the array variable.
+ * - anchor: The default element.
+ * - __VA_ARGS__: A list of array elements to be initialized after the anchor.
+ */
+
+#define STATIC_ARRAY1_STREAMLINED(type, name, anchor, ...) \
+	static const u32 name##_size = ARRAY_SIZE_1B_ARGS(type,__VA_ARGS__);\
+	static const u32 name##_mask = ARRAY_MASK_1B_ARGS(type,__VA_ARGS__);\
+	static const u32 name##_msb = ~name##_mask; \
+	_Pragma("clang diagnostic push") \
+	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
+	static type name[1 << (ARRAY_BITS_1B_ARGS(type,__VA_ARGS__))] \
+		__attribute__ ((aligned(16))) = { \
+		[0 ... (ARRAY_MASK_1B_ARGS(type,__VA_ARGS__))] = \
+		anchor, __VA_ARGS__ \
+	}; \
+	_Pragma("clang diagnostic pop") \
+	static inline u32 name##_verify(u32 index) { \
+		return verify_1bi32pow2(index, name##_mask, name##_msb); \
+	} \
+	static inline type name##_at(u32 index) { \
+		return name[name##_verify(index)]; \
+	} \
+
+
+#define DEFINE_STATIC_ARRAY_ALIGNED(type, name, bits, item, ...) \
+	static const unsigned name##_mask = ~((1<<(bits))-1); \
+	static const unsigned name##_bits = bits; \
+	_Pragma("clang diagnostic push") \
+	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
+	static type name[1 << (bits)] = { \
+		[0 ... ((1<<(bits))-1)] = item, __VA_ARGS__ \
+	}; \
+	_Pragma("clang diagnostic pop") \
+	static inline unsigned name##_index_zb(unsigned index) { \
+		unsigned _x = !(name##_mask & index) * index; \
+		return _x + ((index && !_x) * ((1<<bits)-1)); \
+	} \
+	static inline type name##_fetch_zb(unsigned index) { \
+		return name[name##_index_zb(index)]; \
+	} \
+	static inline unsigned name##_index_ob(unsigned index) { \
+		return !(name##_mask & index) * index; \
+	} \
+	static inline type name##_fetch_ob(unsigned index) { \
+		return name[name##_index_ob(index)]; \
+	} \
+	static inline unsigned name##_index(unsigned index) { \
+		return index < array_size(name) ? index: array_size(name) - 1;\
+	} \
+	static inline type name##_fetch(unsigned index) { \
+		return name##_fetch_ob(index); \
+	}
+
+#define DEFINE_ARRAY_ALIGNED(type, name, bits, item, ...) \
+	const unsigned name##_mask = ~((1<<(bits))-1); \
+	const unsigned name##_bits = bits; \
+	_Pragma("clang diagnostic push") \
+	_Pragma("clang diagnostic ignored \"-Winitializer-overrides\"") \
+	type name[1 << (bits)] = { \
+		[0 ... ((1<<(bits))-1)] = item, __VA_ARGS__ \
+	}; \
+	_Pragma("clang diagnostic pop") 
+
+#define DECLARE_ARRAY_ALIGNED(type, name, bits) \
+	extern const unsigned name##_mask; \
+	extern const unsigned name##_bits; \
+	extern type name[1 << (bits)]; \
+	static inline unsigned name##_index_zb(unsigned index) { \
+		unsigned _x = !(name##_mask & index) * index; \
+		return _x + ((index && !_x) * ((1<<bits)-1)); \
+	} \
+	static inline unsigned name##_index_ob(unsigned index) { \
+		return !(name##_mask & index) * index; \
+	} \
+	static inline type name##_fetch_zb(unsigned index) { \
+		return name[name##_index_zb(index)]; \
+	} \
+	static inline type name##_fetch_ob(unsigned index) { \
+		return name[name##_index_ob(index)]; \
+	} \
+	static inline unsigned name##_index(unsigned index) { \
+		return index < ARRAY_SIZE(name) ? index: ARRAY_SIZE(name) - 1;\
+	} \
+	static inline type name##_fetch(unsigned index) { \
+		return name[name##_index(index)]; \
+	}
 
 /* Run block on bits of number */
 #define VISIT_ARRAY_BITS_NUM(num, bit, block)                \
@@ -182,5 +347,31 @@
 	const unsigned __typeof__(num) mask = (1 << (count - 1)); \
 	do {bit = (num & mask) != 0?1:0; block; mask >>= 1;} while (mask > 0); \
 }
+
+#define BSEARCH_FIRST_GE_CMP(ary,N,x,ary_lt_x) \
+({ \
+	unsigned l = 0, r = (N); \
+	while (l < r) { \
+		unsigned m = (l+r)/2; \
+		if (ary_lt_x(ary,m,x)) \
+			l = m+1; \
+		else \
+			r = m; \
+	} \
+	l; \
+})
+
+#define ARRAY_LT_NUM(ary,i,x) (ary)[i] < (x)
+#define BSEARCH_FIRST_GE(ary,N,x) BSEARCH_FIRST_GE_CMP(ary,N,x,ARRAY_LT_NUM)
+#define BSEARCH_EQ(ary,N,x) \
+({ \
+	int i = BSEARCH_FIRST_GE(ary,N,x); \
+	if (i >= (N) || (ary)[i] != (x)) i=-1; i; \
+})
+
+/* Run block */
+#define VISIT_BLOCK(cond, block) \
+	if (cond) { block }
+
 
 #endif
